@@ -26,13 +26,13 @@
     a{color:var(--accent);text-decoration:none}
     a:hover{text-decoration:underline}
     .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0e141d;border:1px solid #253243;font-size:.8rem;color:var(--muted)}
-  .alert{border:1px solid #3b2a2a;background:#201416;color:#ffd9d9;border-radius:12px;padding:10px}.alert strong{color:#ffb3b3}
+    .alert{border:1px solid #3b2a2a;background:#201416;color:#ffd9d9;border-radius:12px;padding:10px}.alert strong{color:#ffb3b3}
   </style>
 </head>
 <body>
   <main class="card" role="main">
-    <h1>Alcohol → Grams of Ethanol & Modeled Risk</h1>
-    <p class="hint">Compute grams of ethanol and a simple, dose-based cancer risk estimate using the Japan case–control study (10 drink-years ≈ 5% higher odds of all cancers). See <a href="https://pubmed.ncbi.nlm.nih.gov/31814116/" rel="noopener" target="_blank">PubMed: 31814116</a>.</p>
+    <h1>Alcohol → Grams of Ethanol & Modeled Cancer Odds</h1>
+    <p class="hint">Uses the Japan case–control study heuristic (10 drink‑years ≈ 5% higher <em>overall</em> cancer odds). Source: <a href="https://pubmed.ncbi.nlm.nih.gov/31814116/" rel="noopener" target="_blank">PubMed: 31814116</a>.</p>
 
     <form id="calc" onsubmit="event.preventDefault(); compute();">
       <div class="grid">
@@ -71,9 +71,10 @@
           <label>Pattern</label>
           <div class="row small" role="radiogroup" aria-label="pattern">
             <label><input type="radio" name="pattern" value="daily" checked> daily</label>
+            <label><input type="radio" name="pattern" value="weekly"> weekly</label>
             <label><input type="radio" name="pattern" value="once"> one time</label>
           </div>
-          <div class="small muted">• <b>daily</b>: this serving every day for the selected years.<br>• <b>one time</b>: a single serving across the chosen span (e.g., years = 0.0027397 ≈ 1 day). Drink‑years then equal drinks ÷ 365.</div>
+          <div class="small muted">• <b>daily</b>: this serving every day for the selected years.<br>• <b>weekly</b>: this serving once each week (averaged across years).<br>• <b>one time</b>: a single serving across the span (e.g., years = 0.0027397 ≈ 1 day).</div>
         </div>
       </div>
 
@@ -85,9 +86,7 @@
       </div>
 
       <div class="result" aria-live="polite" style="margin-top:8px;">
-        <div><strong>Average drinks/day (Japan unit, 23 g):</strong> <span id="drinksPerDay">—</span></div>
-        <div><strong>Drink-years (drinks/day × years):</strong> <span id="drinkYears">—</span></div>
-        <div><strong>Modeled ↑ odds of all cancers:</strong> <span id="risk">—</span> <span class="small muted">(linear scaling: 10 drink-years ≈ 5%)</span></div>
+        <div><strong>Modeled ↑ odds of all cancers:</strong> <span id="risk">—</span> <span class="small muted">(linear scaling from 10 drink-years ≈ 5%)</span></div>
       </div>
 
       <div id="cypBox" class="alert small" style="margin-top:8px;" role="status" aria-live="polite">
@@ -95,7 +94,7 @@
       </div>
 
       <p class="small muted">
-        This is a simple dose-exposure model from a Japanese case–control study; it does not adjust for genetics (e.g., ALDH2), site-specific risks, or other factors. Source: <a href="https://pubmed.ncbi.nlm.nih.gov/31814116/" target="_blank" rel="noopener">Light to moderate amount of lifetime alcohol consumption and cancer risk in Japan</a>.
+        This is a simple dose-exposure model; it does not adjust for genetics (e.g., ALDH2), site-specific risks, or other factors. Source: <a href="https://pubmed.ncbi.nlm.nih.gov/31814116/" target="_blank" rel="noopener">Light to moderate amount of lifetime alcohol consumption and cancer risk in Japan</a>.
       </p>
     </form>
   </main>
@@ -107,10 +106,7 @@
     const gramsOut = document.getElementById('grams');
     const editRho = document.getElementById('editRho');
 
-    const drinksPerDayOut = document.getElementById('drinksPerDay');
-    const drinkYearsOut = document.getElementById('drinkYears');
     const riskOut = document.getElementById('risk');
-
     const yearsEl = document.getElementById('years');
 
     function toNumber(el){
@@ -123,18 +119,26 @@
       const A = toNumber(abv);
       const R = toNumber(rho);
       if(!Number.isFinite(V) || !Number.isFinite(A) || !Number.isFinite(R)) return NaN;
-      return V * (A/100) * R; // grams
+      return V * (A/100) * R;
+    }
+
+    function drinksPerDayFromPattern(g, yrs){
+      const pattern = document.querySelector('input[name="pattern"]:checked')?.value || 'daily';
+      const drink = g / 23;
+      if(pattern === 'daily') return drink;          
+      if(pattern === 'weekly') return drink / 7;     
+
+      const y = Number.isFinite(yrs) && yrs > 0 ? yrs : 1;
+      return drink / (y * 365);
     }
 
     function compute(){
       const g = gramsPerServing();
       const yrs = toNumber(yearsEl);
-      const pattern = document.querySelector('input[name="pattern"]:checked')?.value || 'daily';
 
       if(!Number.isFinite(g)) { gramsOut.textContent = '—'; } else { gramsOut.textContent = g.toFixed(2) + ' g'; }
 
       // CYP2E1 informational note — always visible; show current serving grams
-      const cypBox = document.getElementById('cypBox');
       const cypNow = document.getElementById('cypNow');
       if(Number.isFinite(g)){
         cypNow.textContent = `(current serving ≈ ${g.toFixed(2)} g)`;
@@ -142,28 +146,12 @@
         cypNow.textContent = '';
       }
 
-      if(Number.isFinite(g)){
-        let drinksPerDay;
-        if(pattern === 'daily'){
-          drinksPerDay = g / 23; // one serving every day
-        } else { // one-time exposure
-          const y = Number.isFinite(yrs) && yrs > 0 ? yrs : 1;
-          drinksPerDay = (g / 23) / (y * 365);
-        }
-        drinksPerDayOut.textContent = drinksPerDay.toFixed(6);
-
-        if(Number.isFinite(yrs)){
-          const drinkYears = drinksPerDay * yrs;
-          drinkYearsOut.textContent = drinkYears.toFixed(4);
-          const riskPct = (drinkYears / 10) * 5; // 10 drink-years ≈ 5%
-          riskOut.textContent = isFinite(riskPct) ? riskPct.toFixed(2) + '% (~overall odds)' : '—';
-        } else {
-          drinkYearsOut.textContent = '—';
-          riskOut.textContent = '—';
-        }
+      if(Number.isFinite(g) && Number.isFinite(yrs)){
+        const drinksPerDay = drinksPerDayFromPattern(g, yrs);
+        const drinkYears = drinksPerDay * yrs;
+        const riskPct = (drinkYears / 10) * 5; // 10 drink-years ≈ 5%
+        riskOut.textContent = isFinite(riskPct) ? riskPct.toFixed(2) + '% (~overall odds)' : '—';
       } else {
-        drinksPerDayOut.textContent = '—';
-        drinkYearsOut.textContent = '—';
         riskOut.textContent = '—';
       }
     }
